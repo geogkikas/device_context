@@ -1,24 +1,26 @@
-import 'package:device_context/device_context_data.dart';
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:device_context/device_context.dart';
+import 'package:device_context/device_context_data.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const DeviceContextExampleApp());
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+/// Main entry point for the Device Context Example Application.
+class DeviceContextExampleApp extends StatefulWidget {
+  const DeviceContextExampleApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<DeviceContextExampleApp> createState() =>
+      _DeviceContextExampleAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _DeviceContextExampleAppState extends State<DeviceContextExampleApp> {
   DeviceContextData? _data;
   bool _isLoading = true;
 
-  // --- Category Flags ---
+  // --- Instant Fetch Category Flags ---
   bool _fetchDeviceInfo = true;
   bool _fetchBasic = true;
   bool _fetchThermal = true;
@@ -29,25 +31,110 @@ class _MyAppState extends State<MyApp> {
   bool _fetchMotion = true;
   bool _fetchActivity = true;
 
+  // --- Continuous Sampling Flags ---
+  bool _enableContinuousSampling = false;
+  final int _samplingWindowSeconds = 5; // 5-second sampling window
+  final int _samplingHz = 20; // 20 updates per second
+
   @override
   void initState() {
     super.initState();
     _fetchHardwareData();
   }
 
+  /// Fetches data using the new Configuration Object API.
   Future<void> _fetchHardwareData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
     try {
       final data = await DeviceContext.getSensorData(
-        fetchDeviceInfo: _fetchDeviceInfo,
-        fetchBasic: _fetchBasic,
-        fetchThermal: _fetchThermal,
-        fetchElectrical: _fetchElectrical,
-        fetchHealth: _fetchHealth,
-        fetchEnvironment: _fetchEnvironment,
-        fetchLocation: _fetchLocation,
-        fetchMotion: _fetchMotion,
-        fetchActivity: _fetchActivity,
+        // 1. Hardware Configuration
+        hardware: HardwareConfig(
+          deviceInfo: _fetchDeviceInfo,
+          batteryStatus: _fetchBasic,
+          instantElectricalDraw: _fetchElectrical,
+          thermalState: _fetchThermal,
+          batteryHealth: _fetchHealth,
+        ),
+
+        // 2. Instant Sensors Configuration
+        instantSensors: InstantSensorsConfig(
+          ambientLight: _fetchEnvironment,
+          location: _fetchLocation,
+          motionAndPosture: _fetchMotion,
+          aiActivityPrediction: _fetchActivity,
+        ),
+
+        // 3. Continuous Sampling Configuration
+        continuousSampling: _enableContinuousSampling
+            ? ContinuousSamplingConfig(
+                window: Duration(seconds: _samplingWindowSeconds),
+                samplingRateHz: _samplingHz,
+                averageElectricalDraw: true,
+                averageMotionState: true,
+                averageAmbientLight: true,
+              )
+            : null,
       );
+
+      // --- Debug print of ALL fetched data ---
+      debugPrint('\n--- 📱 DEVICE CONTEXT DATA FETCHED ---');
+      if (_fetchDeviceInfo) {
+        debugPrint(
+          'Identity: ${data.identity?.manufacturer} ${data.identity?.brand} ${data.identity?.model} '
+          '(Board: ${data.identity?.board}, HW: ${data.identity?.hardware}) '
+          '[OS: ${data.identity?.osName} ${data.identity?.osVersion}] '
+          'ID: ${data.identity?.deviceId}',
+        );
+      }
+      if (_fetchBasic || _fetchElectrical || _fetchHealth) {
+        debugPrint(
+          'Battery (Basic): ${data.battery?.level}%, Status: ${data.battery?.status}, Plugged: ${data.battery?.pluggedStatus}',
+        );
+        debugPrint(
+          'Battery (Electrical): ${data.battery?.currentNowMA} mA, ${data.battery?.voltage} mV (Mean Current: ${data.battery?.meanCurrentMA} mA)',
+        );
+        debugPrint(
+          'Battery (Health): Code ${data.battery?.health}, Cycles: ${data.battery?.cycleCount}, Capacity: ${data.battery?.chargeCounterMAh} mAh',
+        );
+      }
+      if (_fetchThermal) {
+        debugPrint(
+          'Thermal: Battery ${data.thermal?.batteryTemp}°C, CPU ${data.thermal?.cpuTemp}°C (Status: ${data.thermal?.thermalStatus})',
+        );
+      }
+      if (_fetchEnvironment) {
+        debugPrint(
+          'Environment: ${data.environment?.lightLux} lux (Mean: ${data.environment?.meanLightLux} lux)',
+        );
+      }
+      if (_fetchLocation) {
+        debugPrint(
+          'Location: Lat ${data.location?.latitude}, Lng ${data.location?.longitude}, Alt ${data.location?.altitude}m',
+        );
+      }
+      if (_fetchMotion) {
+        debugPrint(
+          'Motion (Instant): Posture: ${data.motion?.posture}, State: ${data.motion?.motionState}',
+        );
+        debugPrint(
+          'Motion (Proximity): ${data.motion?.proximityCm}cm, Covered: ${data.motion?.isCovered}',
+        );
+        debugPrint(
+          'Motion (Raw Accel): [X: ${data.motion?.accelX?.toStringAsFixed(2)}, Y: ${data.motion?.accelY?.toStringAsFixed(2)}, Z: ${data.motion?.accelZ?.toStringAsFixed(2)}]',
+        );
+        debugPrint(
+          'Motion (Mean): State: ${data.motion?.meanMotionState}, Accel: [X: ${data.motion?.meanAccelX?.toStringAsFixed(2)}, Y: ${data.motion?.meanAccelY?.toStringAsFixed(2)}, Z: ${data.motion?.meanAccelZ?.toStringAsFixed(2)}]',
+        );
+      }
+      if (_fetchActivity) {
+        debugPrint(
+          'Activity (AI): ${data.activity?.activityType} (Confidence: ${data.activity?.activityConfidence})',
+        );
+      }
+      debugPrint('--------------------------------------\n');
+      // ----------------------------------------------
 
       if (mounted) {
         setState(() {
@@ -56,20 +143,25 @@ class _MyAppState extends State<MyApp> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to fetch sensor data: $e')),
+        );
+      }
     }
   }
 
-  // --- Decoding Helpers ---
-  String? _getThermalStatusString(int? status) {
-    if (status == null) return null;
+  // MARK: - Decoding Helpers
+
+  String _getThermalStatusString(int? status) {
     switch (status) {
       case 0:
-        return "Normal (0)";
+        return "Nominal (0)";
       case 1:
-        return "Light (1)";
+        return "Fair (1)";
       case 2:
-        return "Moderate (2)";
+        return "Serious (2)";
       case 3:
         return "Severe (3)";
       case 4:
@@ -79,8 +171,7 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  String? _getChargeStatusString(int? status) {
-    if (status == null) return null;
+  String _getChargeStatusString(int? status) {
     switch (status) {
       case 2:
         return "Charging";
@@ -95,8 +186,7 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  String? _getHealthString(int? health) {
-    if (health == null) return null;
+  String _getHealthString(int? health) {
     switch (health) {
       case 2:
         return "Good";
@@ -113,8 +203,7 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  String? _getPluggedString(int? plugged) {
-    if (plugged == null) return null;
+  String _getPluggedString(int? plugged) {
     switch (plugged) {
       case 0:
         return "On Battery";
@@ -129,14 +218,18 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  // --- UI Builders ---
+  // MARK: - UI Builders
+
   Widget _buildDataRow(
     String icon,
     String label,
     String? value,
-    bool isEnabled,
-  ) {
-    final color = isEnabled ? Colors.white : Colors.white24;
+    bool isEnabled, {
+    bool isMeanValue = false,
+  }) {
+    final textColor = isEnabled
+        ? (isMeanValue ? Colors.cyanAccent : Colors.white)
+        : Colors.white24;
     final displayValue = isEnabled ? (value ?? 'N/A') : 'Disabled';
 
     return Padding(
@@ -147,22 +240,25 @@ class _MyAppState extends State<MyApp> {
           Text(icon, style: const TextStyle(fontSize: 20)),
           const SizedBox(width: 12),
           Expanded(
+            flex: 2,
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 color: isEnabled ? Colors.white70 : Colors.white24,
+                fontStyle: isMeanValue ? FontStyle.italic : FontStyle.normal,
               ),
             ),
           ),
           Expanded(
+            flex: 3,
             child: Text(
               displayValue,
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
-                color: color,
+                color: textColor,
               ),
             ),
           ),
@@ -215,11 +311,20 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData.dark(useMaterial3: true),
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('Hardware Context'),
+          title: const Text('Device Context Data'),
           backgroundColor: Colors.blueGrey[900],
         ),
         body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text("Sampling hardware sensors..."),
+                  ],
+                ),
+              )
             : SafeArea(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
@@ -230,7 +335,7 @@ class _MyAppState extends State<MyApp> {
                       const Padding(
                         padding: EdgeInsets.only(left: 8.0, bottom: 8.0),
                         child: Text(
-                          "DATA CATEGORIES",
+                          "CONFIGURATION",
                           style: TextStyle(
                             color: Colors.blueGrey,
                             fontWeight: FontWeight.bold,
@@ -238,123 +343,118 @@ class _MyAppState extends State<MyApp> {
                           ),
                         ),
                       ),
+                      Card(
+                        color: Colors.blueGrey.withValues(alpha: 0.1),
+                        child: SwitchListTile(
+                          title: const Text("Continuous Sampling Mode"),
+                          subtitle: Text(
+                            "Averages motion, light, and electrical data over $_samplingWindowSeconds seconds at ${_samplingHz}Hz.",
+                          ),
+                          value: _enableContinuousSampling,
+                          activeThumbColor: Colors.cyanAccent,
+                          onChanged: (val) {
+                            setState(() => _enableContinuousSampling = val);
+                            _fetchHardwareData();
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Wrap(
                         spacing: 8.0,
-                        runSpacing: 8.0,
+                        runSpacing: -4.0,
                         children: [
                           FilterChip(
                             label: const Text('Device Info'),
                             selected: _fetchDeviceInfo,
-                            onSelected: (v) {
-                              setState(() => _fetchDeviceInfo = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) =>
+                                setState(() => _fetchDeviceInfo = v),
                           ),
                           FilterChip(
                             label: const Text('Basic'),
                             selected: _fetchBasic,
-                            onSelected: (v) {
-                              setState(() => _fetchBasic = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) => setState(() => _fetchBasic = v),
                           ),
                           FilterChip(
                             label: const Text('Thermal'),
                             selected: _fetchThermal,
-                            onSelected: (v) {
-                              setState(() => _fetchThermal = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) =>
+                                setState(() => _fetchThermal = v),
                           ),
                           FilterChip(
                             label: const Text('Electrical'),
                             selected: _fetchElectrical,
-                            onSelected: (v) {
-                              setState(() => _fetchElectrical = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) =>
+                                setState(() => _fetchElectrical = v),
                           ),
                           FilterChip(
                             label: const Text('Health'),
                             selected: _fetchHealth,
-                            onSelected: (v) {
-                              setState(() => _fetchHealth = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) => setState(() => _fetchHealth = v),
                           ),
                           FilterChip(
                             label: const Text('Environment'),
                             selected: _fetchEnvironment,
-                            onSelected: (v) {
-                              setState(() => _fetchEnvironment = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) =>
+                                setState(() => _fetchEnvironment = v),
                           ),
                           FilterChip(
                             label: const Text('Location'),
                             selected: _fetchLocation,
-                            onSelected: (v) {
-                              setState(() => _fetchLocation = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) =>
+                                setState(() => _fetchLocation = v),
                           ),
                           FilterChip(
                             label: const Text('Motion'),
                             selected: _fetchMotion,
-                            onSelected: (v) {
-                              setState(() => _fetchMotion = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) => setState(() => _fetchMotion = v),
                           ),
                           FilterChip(
                             label: const Text('Activity (AI)'),
                             selected: _fetchActivity,
-                            onSelected: (v) {
-                              setState(() => _fetchActivity = v);
-                              _fetchHardwareData();
-                            },
+                            onSelected: (v) =>
+                                setState(() => _fetchActivity = v),
                           ),
                         ],
                       ),
                       const SizedBox(height: 24),
 
-                      // --- 0. DEVICE INFO ---
-                      _buildCategoryCard("DEVICE INFO", [
+                      // --- 0. DEVICE IDENTITY ---
+                      _buildCategoryCard("DEVICE IDENTITY", [
                         _buildDataRow(
                           '🏢',
                           'Manufacturer',
-                          _data?.deviceInfo?.manufacturer,
+                          _data?.identity?.manufacturer,
                           _fetchDeviceInfo,
                         ),
                         _buildDataRow(
                           '🏷️',
                           'Brand',
-                          _data?.deviceInfo?.brand,
+                          _data?.identity?.brand,
                           _fetchDeviceInfo,
                         ),
                         _buildDataRow(
                           '📱',
                           'Model',
-                          _data?.deviceInfo?.model,
+                          _data?.identity?.model,
                           _fetchDeviceInfo,
                         ),
                         _buildDataRow(
                           '🖥️',
                           'Board',
-                          _data?.deviceInfo?.board,
+                          _data?.identity?.board,
                           _fetchDeviceInfo,
                         ),
                         _buildDataRow(
                           '🔩',
                           'Hardware',
-                          _data?.deviceInfo?.hardware,
+                          _data?.identity?.hardware,
                           _fetchDeviceInfo,
                         ),
                         _buildDataRow(
                           '⚙️',
                           'OS Version',
-                          _data?.deviceInfo?.osName != null
-                              ? '${_data!.deviceInfo!.osName} ${_data!.deviceInfo!.osVersion}'
+                          _data?.identity?.osName != null
+                              ? '${_data!.identity!.osName} ${_data!.identity!.osVersion}'
                               : null,
                           _fetchDeviceInfo,
                         ),
@@ -362,54 +462,88 @@ class _MyAppState extends State<MyApp> {
                         _buildDataRow(
                           '🔑',
                           'Device ID',
-                          _data?.deviceInfo?.deviceId,
+                          _data?.identity?.deviceId,
                           _fetchDeviceInfo,
                         ),
                       ], _fetchDeviceInfo),
 
-                      // --- 1. BASIC & ELECTRICAL ---
-                      _buildCategoryCard("POWER STATUS", [
-                        _buildDataRow(
-                          '🔋',
-                          'Battery Level',
-                          _data?.basic?.batteryLevel != null
-                              ? '${_data!.basic!.batteryLevel}%'
-                              : null,
-                          _fetchBasic,
-                        ),
-                        _buildDataRow(
-                          '🔄',
-                          'Charge State',
-                          _getChargeStatusString(_data?.basic?.status),
-                          _fetchBasic,
-                        ),
-                        _buildDataRow(
-                          '🔗',
-                          'Power Source',
-                          _getPluggedString(_data?.basic?.pluggedStatus),
-                          _fetchBasic,
-                        ),
-                        const Divider(height: 24, color: Colors.white10),
-                        _buildDataRow(
-                          '⚡',
-                          'Current (Now)',
-                          _data?.electrical?.currentNowMA != null
-                              ? '${_data!.electrical!.currentNowMA} mA'
-                              : null,
-                          _fetchElectrical,
-                        ),
-                        _buildDataRow(
-                          '🔌',
-                          'Voltage',
-                          _data?.electrical?.voltage != null
-                              ? '${_data!.electrical!.voltage} mV'
-                              : null,
-                          _fetchElectrical,
-                        ),
-                      ], _fetchBasic || _fetchElectrical),
+                      // --- 1. BATTERY (Merged Basic, Electrical, Health) ---
+                      _buildCategoryCard(
+                        "BATTERY & POWER",
+                        [
+                          _buildDataRow(
+                            '🔋',
+                            'Battery Level',
+                            _data?.battery?.level != null
+                                ? '${_data!.battery!.level}%'
+                                : null,
+                            _fetchBasic,
+                          ),
+                          _buildDataRow(
+                            '🔄',
+                            'Charge State',
+                            _getChargeStatusString(_data?.battery?.status),
+                            _fetchBasic,
+                          ),
+                          _buildDataRow(
+                            '🔗',
+                            'Power Source',
+                            _getPluggedString(_data?.battery?.pluggedStatus),
+                            _fetchBasic,
+                          ),
+                          const Divider(height: 24, color: Colors.white10),
+                          _buildDataRow(
+                            '⚡',
+                            'Current (Instant)',
+                            _data?.battery?.currentNowMA != null
+                                ? '${_data!.battery!.currentNowMA} mA'
+                                : null,
+                            _fetchElectrical,
+                          ),
+                          _buildDataRow(
+                            '📈',
+                            'Current (Mean)',
+                            _data?.battery?.meanCurrentMA != null
+                                ? '${_data!.battery!.meanCurrentMA!.toStringAsFixed(1)} mA'
+                                : null,
+                            _enableContinuousSampling,
+                            isMeanValue: true,
+                          ),
+                          _buildDataRow(
+                            '🔌',
+                            'Voltage',
+                            _data?.battery?.voltage != null
+                                ? '${_data!.battery!.voltage} mV'
+                                : null,
+                            _fetchElectrical,
+                          ),
+                          const Divider(height: 24, color: Colors.white10),
+                          _buildDataRow(
+                            '❤️',
+                            'Battery Health',
+                            _getHealthString(_data?.battery?.health),
+                            _fetchHealth,
+                          ),
+                          _buildDataRow(
+                            '♻️',
+                            'Cycle Count',
+                            _data?.battery?.cycleCount?.toString(),
+                            _fetchHealth,
+                          ),
+                          _buildDataRow(
+                            '📊',
+                            'Charge Capacity',
+                            _data?.battery?.chargeCounterMAh != null
+                                ? '${_data!.battery!.chargeCounterMAh} mAh'
+                                : null,
+                            _fetchHealth,
+                          ),
+                        ],
+                        _fetchBasic || _fetchElectrical || _fetchHealth,
+                      ),
 
                       // --- 2. THERMAL ---
-                      _buildCategoryCard("THERMAL DATA", [
+                      _buildCategoryCard("THERMAL", [
                         _buildDataRow(
                           '🌡️',
                           'Battery Temp',
@@ -436,57 +570,36 @@ class _MyAppState extends State<MyApp> {
                         ),
                       ], _fetchThermal),
 
-                      // --- 3. HEALTH ---
-                      _buildCategoryCard("BATTERY HEALTH", [
-                        _buildDataRow(
-                          '❤️',
-                          'Battery Health',
-                          _getHealthString(_data?.health?.health),
-                          _fetchHealth,
-                        ),
-                        _buildDataRow(
-                          '📊',
-                          'Charge Capacity',
-                          _data?.health?.chargeCounterMAh != null
-                              ? '${_data!.health!.chargeCounterMAh} mAh'
-                              : null,
-                          _fetchHealth,
-                        ),
-                        _buildDataRow(
-                          '♻️',
-                          'Cycle Count',
-                          _data?.health?.cycleCount != null
-                              ? '${_data!.health!.cycleCount}'
-                              : null,
-                          _fetchHealth,
-                        ),
-                      ], _fetchHealth),
-
-                      // --- 4. ENVIRONMENT & LOCATION ---
+                      // --- 3. ENVIRONMENT & LOCATION ---
                       _buildCategoryCard("ENVIRONMENT & GPS", [
                         _buildDataRow(
                           '☀️',
-                          'Ambient Light',
+                          'Light (Instant)',
                           _data?.environment?.lightLux != null
                               ? '${_data!.environment!.lightLux!.toInt()} lux'
                               : null,
                           _fetchEnvironment,
                         ),
+                        _buildDataRow(
+                          '🌤️',
+                          'Light (Mean)',
+                          _data?.environment?.meanLightLux != null
+                              ? '${_data!.environment!.meanLightLux!.toStringAsFixed(1)} lux'
+                              : null,
+                          _enableContinuousSampling,
+                          isMeanValue: true,
+                        ),
                         const Divider(height: 24, color: Colors.white10),
                         _buildDataRow(
                           '📍',
                           'Latitude',
-                          _data?.location?.latitude != null
-                              ? '${_data!.location!.latitude}'
-                              : null,
+                          _data?.location?.latitude?.toString(),
                           _fetchLocation,
                         ),
                         _buildDataRow(
                           '📍',
                           'Longitude',
-                          _data?.location?.longitude != null
-                              ? '${_data!.location!.longitude}'
-                              : null,
+                          _data?.location?.longitude?.toString(),
                           _fetchLocation,
                         ),
                         _buildDataRow(
@@ -499,40 +612,39 @@ class _MyAppState extends State<MyApp> {
                         ),
                       ], _fetchEnvironment || _fetchLocation),
 
-                      // --- 5. MOTION & ACTIVITY ---
+                      // --- 4. MOTION & ACTIVITY ---
                       _buildCategoryCard("MOTION & ACTIVITY", [
-                        _buildDataRow(
-                          '📱',
-                          'Posture',
-                          _data?.motion?.posture != null
-                              ? '${_data!.motion!.posture}'
-                              : null,
-                          _fetchMotion,
-                        ),
-                        _buildDataRow(
-                          '🏃‍♂️',
-                          'Motion (Manual)',
-                          _data?.motion?.motionState != null
-                              ? '${_data!.motion!.motionState}'
-                              : null,
-                          _fetchMotion,
-                        ),
-                        const Divider(height: 24, color: Colors.white10),
                         _buildDataRow(
                           '🧠',
                           'Activity (AI)',
-                          _data?.activity?.activityType != null
-                              ? '${_data!.activity!.activityType}'
-                              : null,
+                          _data?.activity?.activityType,
                           _fetchActivity,
                         ),
                         _buildDataRow(
                           '🎯',
                           'AI Confidence',
-                          _data?.activity?.activityConfidence != null
-                              ? '${_data!.activity!.activityConfidence}'
-                              : null,
+                          _data?.activity?.activityConfidence,
                           _fetchActivity,
+                        ),
+                        const Divider(height: 24, color: Colors.white10),
+                        _buildDataRow(
+                          '📱',
+                          'Posture',
+                          _data?.motion?.posture,
+                          _fetchMotion,
+                        ),
+                        _buildDataRow(
+                          '🏃‍♂️',
+                          'Motion (Instant)',
+                          _data?.motion?.motionState,
+                          _fetchMotion,
+                        ),
+                        _buildDataRow(
+                          '📉',
+                          'Motion (Mean)',
+                          _data?.motion?.meanMotionState,
+                          _enableContinuousSampling,
+                          isMeanValue: true,
                         ),
                         const Divider(height: 24, color: Colors.white10),
                         _buildDataRow(
@@ -545,29 +657,52 @@ class _MyAppState extends State<MyApp> {
                         ),
                         _buildDataRow(
                           '👖',
-                          'In Pocket',
+                          'Covered / Pocket',
                           _data?.motion?.isCovered != null
                               ? (_data!.motion!.isCovered! ? 'Yes' : 'No')
                               : null,
                           _fetchMotion,
                         ),
+                        const Divider(height: 24, color: Colors.white10),
                         _buildDataRow(
                           'X',
-                          'Accel X',
+                          'Accel X (Instant)',
                           _data?.motion?.accelX?.toStringAsFixed(2),
                           _fetchMotion,
                         ),
                         _buildDataRow(
                           'Y',
-                          'Accel Y',
+                          'Accel Y (Instant)',
                           _data?.motion?.accelY?.toStringAsFixed(2),
                           _fetchMotion,
                         ),
                         _buildDataRow(
                           'Z',
-                          'Accel Z',
+                          'Accel Z (Instant)',
                           _data?.motion?.accelZ?.toStringAsFixed(2),
                           _fetchMotion,
+                        ),
+                        const Divider(height: 24, color: Colors.white10),
+                        _buildDataRow(
+                          'X',
+                          'Accel X (Mean)',
+                          _data?.motion?.meanAccelX?.toStringAsFixed(2),
+                          _enableContinuousSampling,
+                          isMeanValue: true,
+                        ),
+                        _buildDataRow(
+                          'Y',
+                          'Accel Y (Mean)',
+                          _data?.motion?.meanAccelY?.toStringAsFixed(2),
+                          _enableContinuousSampling,
+                          isMeanValue: true,
+                        ),
+                        _buildDataRow(
+                          'Z',
+                          'Accel Z (Mean)',
+                          _data?.motion?.meanAccelZ?.toStringAsFixed(2),
+                          _enableContinuousSampling,
+                          isMeanValue: true,
                         ),
                       ], _fetchMotion || _fetchActivity),
                     ],
@@ -575,9 +710,10 @@ class _MyAppState extends State<MyApp> {
                 ),
               ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _fetchHardwareData(),
+          onPressed: _isLoading ? null : () => _fetchHardwareData(),
           icon: const Icon(Icons.refresh),
-          label: const Text("Refresh"),
+          label: const Text("Sample Data"),
+          backgroundColor: Colors.cyan[700],
         ),
       ),
     );

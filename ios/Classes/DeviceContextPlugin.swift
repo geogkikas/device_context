@@ -13,41 +13,106 @@ public class DeviceContextPlugin: NSObject, FlutterPlugin {
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    if call.method == "getSensorData" {
-      var data = [String: Any]()
-      let args = call.arguments as? [String: Any]
-      let fetchDeviceInfo = args?["fetchDeviceInfo"] as? Bool ?? true
-      let fetchBasic = args?["fetchBasic"] as? Bool ?? true
-      let fetchThermal = args?["fetchThermal"] as? Bool ?? true
-      let fetchLocation = args?["fetchLocation"] as? Bool ?? false
-      let fetchMotion = args?["fetchMotion"] as? Bool ?? false
-
-      if fetchDeviceInfo { fetchDeviceInfoData(&data) }
-      if fetchBasic { fetchBasicInfo(&data) }
-      if fetchThermal { fetchThermalInfo(&data) }
-      if fetchLocation { fetchLocationInfo(&data) }
-
-      if fetchMotion {
-        fetchMotionInfo(&data)
-      }
-
-      result(data)
-    } else {
+    guard call.method == "getSensorData" else {
       result(FlutterMethodNotImplemented)
+      return
+    }
+
+    var sensorData = [String: Any]()
+    let arguments = call.arguments as? [String: Any] ?? [:]
+
+    // 1. Process Synchronous One-Time Reads
+    if arguments["fetchDeviceInfo"] as? Bool ?? true { fetchDeviceInfo(into: &sensorData) }
+    if arguments["fetchBasic"] as? Bool ?? true { fetchBasicInfo(into: &sensorData) }
+    if arguments["fetchThermal"] as? Bool ?? true { fetchThermalInfo(into: &sensorData) }
+    if arguments["fetchLocation"] as? Bool ?? false { fetchLocationInfo(into: &sensorData) }
+
+    // 2. Extract Sampling Parameters
+    let samplingWindowSeconds = arguments["samplingWindowSeconds"] as? Int ?? 0
+    let samplingHz = arguments["samplingHz"] as? Int ?? 10
+    let fetchMeanMotion = arguments["fetchMeanMotion"] as? Bool ?? false
+    let fetchInstantMotion = arguments["fetchMotion"] as? Bool ?? false
+
+    // 3. Route to the correct execution engine
+    if samplingWindowSeconds > 0 && fetchMeanMotion {
+      // FIX: Grab the instant snapshot immediately before starting the 5-second loop
+      if fetchInstantMotion { fetchInstantMotionInfo(into: &sensorData) }
+
+      executeContinuousSampling(
+          dataMap: sensorData,
+          windowSeconds: samplingWindowSeconds,
+          hz: samplingHz,
+          result: result
+      )
+    } else {
+      if fetchInstantMotion { fetchInstantMotionInfo(into: &sensorData) }
+      result(sensorData)
     }
   }
 
-  // --- PRIVATE HELPERS ---
+  // MARK: - Continuous Sampling Engine
 
-  private func fetchDeviceInfoData(_ data: inout [String: Any]) {
+  /// Gathers high-frequency data over a specified time window and calculates mean values.
+  private func executeContinuousSampling(dataMap: [String: Any], windowSeconds: Int, hz: Int, result: @escaping FlutterResult) {
+    var finalData = dataMap
+    var hasResponded = false
+
+    var accelerationXSamples = [Double]()
+    var accelerationYSamples = [Double]()
+    var accelerationZSamples = [Double]()
+    var movingSampleCount = 0
+
+    // Calculate update interval (e.g., 20Hz = 0.05s)
+    let updateInterval = hz > 0 ? (1.0 / Double(hz)) : 0.1
+
+    if motionManager.isAccelerometerAvailable {
+      motionManager.accelerometerUpdateInterval = updateInterval
+      motionManager.startAccelerometerUpdates(to: .main) { (accelerometerData, error) in
+        guard !hasResponded, let acceleration = accelerometerData?.acceleration else { return }
+
+        accelerationXSamples.append(acceleration.x)
+        accelerationYSamples.append(acceleration.y)
+        accelerationZSamples.append(acceleration.z)
+
+        // Motion heuristic: iOS returns acceleration in Gs (1.0 = resting state due to gravity).
+        // A deviation > 0.1G indicates movement.
+        let magnitude = sqrt(pow(acceleration.x, 2) + pow(acceleration.y, 2) + pow(acceleration.z, 2))
+        if abs(magnitude - 1.0) > 0.1 {
+          movingSampleCount += 1
+        }
+      }
+    }
+
+    // Time-Bound Shutdown
+    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(windowSeconds)) { [weak self] in
+      guard !hasResponded else { return }
+      hasResponded = true
+
+      self?.motionManager.stopAccelerometerUpdates()
+
+      if !accelerationXSamples.isEmpty {
+        finalData["mean_accelX"] = accelerationXSamples.reduce(0, +) / Double(accelerationXSamples.count)
+        finalData["mean_accelY"] = accelerationYSamples.reduce(0, +) / Double(accelerationYSamples.count)
+        finalData["mean_accelZ"] = accelerationZSamples.reduce(0, +) / Double(accelerationZSamples.count)
+
+        // If >5% of the samples registered a motion spike, classify the state as "Moving"
+        let percentageMoving = Double(movingSampleCount) / Double(accelerationXSamples.count)
+        finalData["mean_motionState"] = percentageMoving > 0.05 ? "Moving" : "Still"
+      }
+
+      result(finalData)
+    }
+  }
+
+  // MARK: - Synchronous Fetchers
+
+  private func fetchDeviceInfo(into data: inout [String: Any]) {
     data["manufacturer"] = "Apple"
     data["osName"] = UIDevice.current.systemName
     data["osVersion"] = UIDevice.current.systemVersion
-
-    // IDFV survives uninstalls (unless user uninstalls all apps from this vendor)
     data["deviceId"] = UIDevice.current.identifierForVendor?.uuidString
 
-    // Extract exact hardware model (e.g., "iPhone14,2")
+    // Extract exact hardware identifier (e.g., "iPhone14,2")
     var systemInfo = utsname()
     uname(&systemInfo)
     let machineMirror = Mirror(reflecting: systemInfo.machine)
@@ -58,7 +123,7 @@ public class DeviceContextPlugin: NSObject, FlutterPlugin {
     data["model"] = modelIdentifier
   }
 
-  private func fetchBasicInfo(_ data: inout [String: Any]) {
+  private func fetchBasicInfo(into data: inout [String: Any]) {
     UIDevice.current.isBatteryMonitoringEnabled = true
     data["batteryLevel"] = Int(UIDevice.current.batteryLevel * 100)
 
@@ -71,10 +136,9 @@ public class DeviceContextPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  private func fetchThermalInfo(_ data: inout [String: Any]) {
+  private func fetchThermalInfo(into data: inout [String: Any]) {
     if #available(iOS 11.0, *) {
-      let state = ProcessInfo.processInfo.thermalState
-      switch state {
+      switch ProcessInfo.processInfo.thermalState {
       case .nominal: data["thermalStatus"] = 0
       case .fair: data["thermalStatus"] = 1
       case .serious: data["thermalStatus"] = 3
@@ -84,16 +148,15 @@ public class DeviceContextPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  private func fetchLocationInfo(_ data: inout [String: Any]) {
-    let loc = CLLocationManager().location
-    if let l = loc {
-      data["latitude"] = l.coordinate.latitude
-      data["longitude"] = l.coordinate.longitude
-      data["altitude"] = l.altitude
+  private func fetchLocationInfo(into data: inout [String: Any]) {
+    if let location = CLLocationManager().location {
+      data["latitude"] = location.coordinate.latitude
+      data["longitude"] = location.coordinate.longitude
+      data["altitude"] = location.altitude
     }
   }
 
-  private func fetchMotionInfo(_ data: inout [String: Any]) {
+  private func fetchInstantMotionInfo(into data: inout [String: Any]) {
     // 1. Proximity
     UIDevice.current.isProximityMonitoringEnabled = true
     data["isCovered"] = UIDevice.current.proximityState
@@ -110,7 +173,7 @@ public class DeviceContextPlugin: NSObject, FlutterPlugin {
       }
     }()
 
-    // 3. Accelerometer (Start updates briefly to grab latest data)
+    // 3. Accelerometer (Instant single-shot)
     if motionManager.isAccelerometerAvailable {
       motionManager.startAccelerometerUpdates()
       if let accel = motionManager.accelerometerData {
@@ -123,8 +186,8 @@ public class DeviceContextPlugin: NSObject, FlutterPlugin {
         data["accelZ"] = z
 
         // Manual Heuristic for "Motion"
-        let mag = sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2))
-        data["motionState"] = abs(mag - 1.0) > 0.1 ? "Moving" : "Still"
+        let magnitude = sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2))
+        data["motionState"] = abs(magnitude - 1.0) > 0.1 ? "Moving" : "Still"
       }
       motionManager.stopAccelerometerUpdates()
     }

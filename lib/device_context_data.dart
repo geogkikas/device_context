@@ -5,23 +5,20 @@ double? _parseDouble(dynamic value) {
   return null;
 }
 
+/// The root container for all hardware and environmental context data.
 class DeviceContextData {
-  final DeviceInfoData? deviceInfo;
-  final BasicData? basic;
+  final DeviceIdentity? identity;
+  final BatteryData? battery;
   final ThermalData? thermal;
-  final ElectricalData? electrical;
-  final HealthData? health;
   final EnvironmentData? environment;
   final LocationData? location;
   final MotionData? motion;
   final ActivityData? activity;
 
-  DeviceContextData({
-    this.deviceInfo,
-    this.basic,
+  const DeviceContextData({
+    this.identity,
+    this.battery,
     this.thermal,
-    this.electrical,
-    this.health,
     this.environment,
     this.location,
     this.motion,
@@ -30,11 +27,9 @@ class DeviceContextData {
 
   factory DeviceContextData.fromMap(Map<String, dynamic> map) {
     return DeviceContextData(
-      deviceInfo: DeviceInfoData.fromMap(map),
-      basic: BasicData.fromMap(map),
+      identity: DeviceIdentity.fromMap(map),
+      battery: BatteryData.fromMap(map),
       thermal: ThermalData.fromMap(map),
-      electrical: ElectricalData.fromMap(map),
-      health: HealthData.fromMap(map),
       environment: EnvironmentData.fromMap(map),
       location: LocationData.fromMap(map),
       motion: MotionData.fromMap(map),
@@ -43,7 +38,8 @@ class DeviceContextData {
   }
 }
 
-class DeviceInfoData {
+/// Static information about the device hardware and operating system.
+class DeviceIdentity {
   final String? manufacturer;
   final String? model;
   final String? brand;
@@ -51,9 +47,11 @@ class DeviceInfoData {
   final String? hardware;
   final String? osName;
   final String? osVersion;
+
+  /// A unique identifier for the device (Android ID or iOS IdentifierForVendor).
   final String? deviceId;
 
-  DeviceInfoData({
+  const DeviceIdentity({
     this.manufacturer,
     this.model,
     this.brand,
@@ -64,7 +62,7 @@ class DeviceInfoData {
     this.deviceId,
   });
 
-  factory DeviceInfoData.fromMap(Map<String, dynamic> map) => DeviceInfoData(
+  factory DeviceIdentity.fromMap(Map<String, dynamic> map) => DeviceIdentity(
     manufacturer: map['manufacturer'] as String?,
     model: map['model'] as String?,
     brand: map['brand'] as String?,
@@ -76,26 +74,76 @@ class DeviceInfoData {
   );
 }
 
-class BasicData {
-  final int? batteryLevel;
+/// Comprehensive power, charging, electrical, and health metrics for the battery.
+class BatteryData {
+  // --- Basic State ---
+  /// Current battery level as a percentage (0-100).
+  final int? level;
+
+  /// Native OS integer representing charging state (e.g., Charging, Discharging).
   final int? status;
+
+  /// Native OS integer representing the power source (e.g., AC, USB, Wireless).
   final int? pluggedStatus;
 
-  BasicData({this.batteryLevel, this.status, this.pluggedStatus});
+  // --- Electrical Metrics ---
+  /// Instantaneous battery current flow in milliAmps (mA).
+  /// Negative usually implies discharging, positive implies charging.
+  final int? currentNowMA;
 
-  factory BasicData.fromMap(Map<String, dynamic> map) => BasicData(
-    batteryLevel: map['batteryLevel'] as int?,
+  /// Instantaneous battery voltage in milliVolts (mV).
+  final int? voltage;
+
+  /// The average electrical current flow in milliAmps (mA) calculated over a continuous sampling window.
+  final double? meanCurrentMA;
+
+  // --- Health Metrics ---
+  /// Native OS integer indicating overall battery health (e.g., Good, Overheating).
+  final int? health;
+
+  /// The number of full charge cycles the battery has undergone.
+  final int? cycleCount;
+
+  /// The estimated remaining battery capacity in milliAmp-hours (mAh).
+  final int? chargeCounterMAh;
+
+  const BatteryData({
+    this.level,
+    this.status,
+    this.pluggedStatus,
+    this.currentNowMA,
+    this.voltage,
+    this.meanCurrentMA,
+    this.health,
+    this.cycleCount,
+    this.chargeCounterMAh,
+  });
+
+  factory BatteryData.fromMap(Map<String, dynamic> map) => BatteryData(
+    level: map['batteryLevel'] as int?,
     status: map['status'] as int?,
     pluggedStatus: map['pluggedStatus'] as int?,
+    currentNowMA: (map['currentNow_mA'] as num?)?.toInt(),
+    voltage: (map['voltage'] as num?)?.toInt(),
+    meanCurrentMA: _parseDouble(map['mean_current_mA']),
+    health: map['health'] as int?,
+    cycleCount: map['cycleCount'] as int?,
+    chargeCounterMAh: map['chargeCounter_mAh'] as int?,
   );
 }
 
+/// Device temperature metrics.
 class ThermalData {
+  /// Battery temperature in Celsius.
   final double? batteryTemp;
+
+  /// CPU temperature in Celsius (Hardware permitting).
   final double? cpuTemp;
+
+  /// Native OS integer indicating thermal throttling state (e.g., Nominal, Severe).
   final int? thermalStatus;
 
-  ThermalData({this.batteryTemp, this.cpuTemp, this.thermalStatus});
+  const ThermalData({this.batteryTemp, this.cpuTemp, this.thermalStatus});
 
   factory ThermalData.fromMap(Map<String, dynamic> map) => ThermalData(
     batteryTemp: _parseDouble(map['batteryTemp']),
@@ -104,47 +152,29 @@ class ThermalData {
   );
 }
 
-class ElectricalData {
-  final int? currentNowMA;
-  final int? voltage;
-
-  ElectricalData({this.currentNowMA, this.voltage});
-
-  factory ElectricalData.fromMap(Map<String, dynamic> map) => ElectricalData(
-    currentNowMA: (map['currentNow_mA'] as num?)?.toInt(),
-    voltage: (map['voltage'] as num?)?.toInt(),
-  );
-}
-
-class HealthData {
-  final int? health;
-  final int? cycleCount;
-  final int? chargeCounterMAh;
-
-  HealthData({this.health, this.cycleCount, this.chargeCounterMAh});
-
-  factory HealthData.fromMap(Map<String, dynamic> map) => HealthData(
-    health: map['health'] as int?,
-    cycleCount: map['cycleCount'] as int?,
-    chargeCounterMAh: map['chargeCounter_mAh'] as int?,
-  );
-}
-
+/// Ambient environmental data.
 class EnvironmentData {
+  /// Instantaneous ambient light level measured in Lux.
   final double? lightLux;
 
-  EnvironmentData({this.lightLux});
+  /// The average ambient light level (Lux) calculated over a continuous sampling window.
+  final double? meanLightLux;
 
-  factory EnvironmentData.fromMap(Map<String, dynamic> map) =>
-      EnvironmentData(lightLux: _parseDouble(map['light_lux']));
+  const EnvironmentData({this.lightLux, this.meanLightLux});
+
+  factory EnvironmentData.fromMap(Map<String, dynamic> map) => EnvironmentData(
+    lightLux: _parseDouble(map['light_lux']),
+    meanLightLux: _parseDouble(map['mean_light_lux']),
+  );
 }
 
+/// Coarse geographic location data.
 class LocationData {
   final double? latitude;
   final double? longitude;
   final double? altitude;
 
-  LocationData({this.latitude, this.longitude, this.altitude});
+  const LocationData({this.latitude, this.longitude, this.altitude});
 
   factory LocationData.fromMap(Map<String, dynamic> map) => LocationData(
     latitude: _parseDouble(map['latitude']),
@@ -153,41 +183,79 @@ class LocationData {
   );
 }
 
+/// Physical orientation and movement data.
 class MotionData {
+  /// The physical orientation of the device (e.g., Face Up, Portrait, Landscape).
   final String? posture;
+
+  /// Instantaneous estimation of motion (e.g., "Moving" vs "Still").
   final String? motionState;
+
+  /// Smoothed estimation of motion calculated over a continuous sampling window.
+  final String? meanMotionState;
+
+  /// Distance from the proximity sensor in centimeters.
   final double? proximityCm;
+
+  /// True if the proximity sensor is fully covered (e.g., in a pocket or face down on a table).
   final bool? isCovered;
+
+  /// Instantaneous raw X-axis acceleration.
   final double? accelX;
+
+  /// Instantaneous raw Y-axis acceleration.
   final double? accelY;
+
+  /// Instantaneous raw Z-axis acceleration.
   final double? accelZ;
 
-  MotionData({
+  /// Mean X-axis acceleration over a continuous sampling window.
+  final double? meanAccelX;
+
+  /// Mean Y-axis acceleration over a continuous sampling window.
+  final double? meanAccelY;
+
+  /// Mean Z-axis acceleration over a continuous sampling window.
+  final double? meanAccelZ;
+
+  const MotionData({
     this.posture,
     this.motionState,
+    this.meanMotionState,
     this.proximityCm,
     this.isCovered,
     this.accelX,
     this.accelY,
     this.accelZ,
+    this.meanAccelX,
+    this.meanAccelY,
+    this.meanAccelZ,
   });
 
   factory MotionData.fromMap(Map<String, dynamic> map) => MotionData(
     posture: map['posture'] as String?,
     motionState: map['motionState'] as String?,
+    meanMotionState: map['mean_motionState'] as String?,
     proximityCm: _parseDouble(map['proximity_cm']),
     isCovered: map['isCovered'] as bool?,
     accelX: _parseDouble(map['accelX']),
     accelY: _parseDouble(map['accelY']),
     accelZ: _parseDouble(map['accelZ']),
+    meanAccelX: _parseDouble(map['mean_accelX']),
+    meanAccelY: _parseDouble(map['mean_accelY']),
+    meanAccelZ: _parseDouble(map['mean_accelZ']),
   );
 }
 
+/// AI-powered activity predictions.
 class ActivityData {
+  /// The predicted user activity (e.g., WALKING, IN_VEHICLE, STILL).
   final String? activityType;
+
+  /// The confidence level of the prediction (e.g., HIGH, MEDIUM, LOW).
   final String? activityConfidence;
 
-  ActivityData({this.activityType, this.activityConfidence});
+  const ActivityData({this.activityType, this.activityConfidence});
 
   factory ActivityData.fromMap(Map<String, dynamic> map) => ActivityData(
     activityType: map['activityType'] as String?,
