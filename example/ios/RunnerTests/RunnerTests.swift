@@ -3,7 +3,7 @@ import UIKit
 import XCTest
 
 
-@testable import thermal_sensor
+@testable import device_context
 
 // This demonstrates a simple unit test of the Swift portion of this plugin's implementation.
 //
@@ -12,7 +12,7 @@ import XCTest
 class RunnerTests: XCTestCase {
 
   func testGetPlatformVersion() {
-    let plugin = ThermalSensorPlugin()
+    let plugin = DeviceContextPlugin()
 
     let call = FlutterMethodCall(methodName: "getPlatformVersion", arguments: [])
 
