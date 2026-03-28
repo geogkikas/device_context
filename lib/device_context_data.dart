@@ -36,6 +36,18 @@ class DeviceContextData {
       activity: ActivityData.fromMap(map),
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      if (identity != null) 'identity': identity!.toMap(),
+      if (battery != null) 'battery': battery!.toMap(),
+      if (thermal != null) 'thermal': thermal!.toMap(),
+      if (environment != null) 'environment': environment!.toMap(),
+      if (location != null) 'location': location!.toMap(),
+      if (motion != null) 'motion': motion!.toMap(),
+      if (activity != null) 'activity': activity!.toMap(),
+    };
+  }
 }
 
 /// Static information about the device hardware and operating system.
@@ -72,6 +84,17 @@ class DeviceIdentity {
     osVersion: map['osVersion'] as String?,
     deviceId: map['deviceId'] as String?,
   );
+
+  Map<String, dynamic> toMap() => {
+    'manufacturer': manufacturer,
+    'model': model,
+    'brand': brand,
+    'board': board,
+    'hardware': hardware,
+    'osName': osName,
+    'osVersion': osVersion,
+    'deviceId': deviceId,
+  };
 }
 
 /// Comprehensive power, charging, electrical, and health metrics for the battery.
@@ -130,6 +153,18 @@ class BatteryData {
     cycleCount: map['cycleCount'] as int?,
     chargeCounterMAh: map['chargeCounter_mAh'] as int?,
   );
+
+  Map<String, dynamic> toMap() => {
+    'level': level,
+    'status': status,
+    'pluggedStatus': pluggedStatus,
+    'currentNowMA': currentNowMA,
+    'voltage': voltage,
+    'meanCurrentMA': meanCurrentMA,
+    'health': health,
+    'cycleCount': cycleCount,
+    'chargeCounterMAh': chargeCounterMAh,
+  };
 }
 
 /// Device temperature metrics.
@@ -150,6 +185,12 @@ class ThermalData {
     cpuTemp: _parseDouble(map['cpuTemp']),
     thermalStatus: map['thermalStatus'] as int?,
   );
+
+  Map<String, dynamic> toMap() => {
+    'batteryTemp': batteryTemp,
+    'cpuTemp': cpuTemp,
+    'thermalStatus': thermalStatus,
+  };
 }
 
 /// Ambient environmental data.
@@ -166,6 +207,11 @@ class EnvironmentData {
     lightLux: _parseDouble(map['light_lux']),
     meanLightLux: _parseDouble(map['mean_light_lux']),
   );
+
+  Map<String, dynamic> toMap() => {
+    'lightLux': lightLux,
+    'meanLightLux': meanLightLux,
+  };
 }
 
 /// Coarse geographic location data.
@@ -181,6 +227,12 @@ class LocationData {
     longitude: _parseDouble(map['longitude']),
     altitude: _parseDouble(map['altitude']),
   );
+
+  Map<String, dynamic> toMap() => {
+    'latitude': latitude,
+    'longitude': longitude,
+    'altitude': altitude,
+  };
 }
 
 /// Physical orientation and movement data.
@@ -245,6 +297,20 @@ class MotionData {
     meanAccelY: _parseDouble(map['mean_accelY']),
     meanAccelZ: _parseDouble(map['mean_accelZ']),
   );
+
+  Map<String, dynamic> toMap() => {
+    'posture': posture,
+    'motionState': motionState,
+    'meanMotionState': meanMotionState,
+    'proximityCm': proximityCm,
+    'isCovered': isCovered,
+    'accelX': accelX,
+    'accelY': accelY,
+    'accelZ': accelZ,
+    'meanAccelX': meanAccelX,
+    'meanAccelY': meanAccelY,
+    'meanAccelZ': meanAccelZ,
+  };
 }
 
 /// AI-powered activity predictions.
@@ -261,4 +327,9 @@ class ActivityData {
     activityType: map['activityType'] as String?,
     activityConfidence: map['activityConfidence'] as String?,
   );
+
+  Map<String, dynamic> toMap() => {
+    'activityType': activityType,
+    'activityConfidence': activityConfidence,
+  };
 }
