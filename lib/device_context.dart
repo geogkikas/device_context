@@ -186,7 +186,7 @@ class DeviceContext {
           .activityStream
           .first
           .timeout(
-            const Duration(milliseconds: 500),
+            const Duration(milliseconds: 5000),
             onTimeout: () =>
                 Activity(ActivityType.UNKNOWN, ActivityConfidence.LOW),
           );

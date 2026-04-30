@@ -61,7 +61,7 @@ class DeviceContextPlugin: FlutterPlugin, MethodCallHandler {
             val fetchInstantMotion = call.argument<Boolean>("fetchMotion") == true
 
             // 3. Route to the correct Async Engine
-            if (windowSeconds > 0 && (fetchMeanEnv || fetchMeanMotion || fetchMeanElec)) {
+            if (windowSeconds > 0) {
                 // PASS the instant flags (fetchInstantEnv, fetchInstantMotion) into the sampler
                 executeContinuousSampling(
                     sensorData, fetchMeanEnv, fetchMeanMotion, fetchMeanElec,
@@ -187,22 +187,34 @@ class DeviceContextPlugin: FlutterPlugin, MethodCallHandler {
             if (hasResponded) return@postDelayed
             hasResponded = true
 
-            sensorManager.unregisterListener(listener)
-            handler.removeCallbacks(currentPoller)
-
-            if (luxSamples.isNotEmpty()) dataMap["mean_light_lux"] = luxSamples.average()
-            if (currentSamples.isNotEmpty()) dataMap["mean_current_mA"] = currentSamples.average()
-
-            if (accelXSamples.isNotEmpty()) {
-                dataMap["mean_accelX"] = accelXSamples.average()
-                dataMap["mean_accelY"] = accelYSamples.average()
-                dataMap["mean_accelZ"] = accelZSamples.average()
-
-                val percentMoving = movingSampleCount.toDouble() / accelXSamples.size
-                dataMap["mean_motionState"] = if (percentMoving > 0.05) "Moving" else "Still"
+            try {
+                sensorManager.unregisterListener(listener)
+                handler.removeCallbacks(currentPoller)
+            } catch (e: Exception) {
+                // Ignore unregistration errors
             }
 
-            result.success(dataMap)
+            try {
+                if (luxSamples.isNotEmpty()) dataMap["mean_light_lux"] = luxSamples.average()
+                if (currentSamples.isNotEmpty()) dataMap["mean_current_mA"] = currentSamples.average()
+
+                if (accelXSamples.isNotEmpty()) {
+                    dataMap["mean_accelX"] = accelXSamples.average()
+                    dataMap["mean_accelY"] = accelYSamples.average()
+                    dataMap["mean_accelZ"] = accelZSamples.average()
+
+                    val percentMoving = movingSampleCount.toDouble() / accelXSamples.size
+                    dataMap["mean_motionState"] = if (percentMoving > 0.05) "Moving" else "Still"
+                }
+            } catch (e: Exception) {
+                // Ignore processing errors
+            }
+
+            try {
+                result.success(dataMap)
+            } catch (e: Exception) {
+                // Flutter channel closed
+            }
         }, windowSeconds * 1000L)
     }
 
@@ -338,7 +350,7 @@ class DeviceContextPlugin: FlutterPlugin, MethodCallHandler {
                 sensorManager.unregisterListener(listener)
                 dispatchResultSafely()
             }
-        }, 500)
+        }, 5000)
     }
 
     // MARK: - Hardware Helpers & Math
